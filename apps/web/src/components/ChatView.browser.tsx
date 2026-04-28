@@ -5315,6 +5315,98 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("shows the Codex usage meter in the composer footer and renders usage details", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-account-usage-target" as MessageId,
+        targetText: "account usage thread",
+      }),
+      configureFixture: (nextFixture) => {
+        const provider = nextFixture.serverConfig.providers[0];
+        if (!provider || provider.provider !== "codex") {
+          throw new Error("Expected default codex provider in test fixture.");
+        }
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          providers: [
+            {
+              ...provider,
+              accountUsage: {
+                source: "codex.app-server.rate-limits",
+                updatedAt: Date.parse("2026-04-28T12:00:00.000Z"),
+                limitId: "codex",
+                limitName: "Codex",
+                planType: "pro",
+                primary: {
+                  usedPercent: 82,
+                  resetsAt: Date.parse("2026-04-28T13:00:00.000Z"),
+                  windowDurationMins: 60,
+                },
+                secondary: {
+                  usedPercent: 10,
+                  resetsAt: Date.parse("2026-04-28T12:15:00.000Z"),
+                  windowDurationMins: 15,
+                },
+                credits: {
+                  hasCredits: true,
+                  unlimited: false,
+                  balance: "$9.50",
+                },
+                rateLimitReachedType: null,
+              },
+            },
+          ],
+        };
+      },
+    });
+
+    try {
+      const meterButton = await waitForElement(
+        () =>
+          document.querySelector<HTMLButtonElement>('button[aria-label^="Codex account usage"]'),
+        "Unable to find account usage meter button.",
+      );
+      meterButton.click();
+
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent).toContain("Codex usage");
+          expect(document.body.textContent).toContain("Primary window");
+          expect(document.body.textContent).toContain("Used");
+          expect(document.body.textContent).toContain("82%");
+          expect(document.body.textContent).toContain("18%");
+          expect(document.body.textContent).toContain("$9.50");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("hides the Codex usage meter when account usage is missing", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-account-usage-hidden-target" as MessageId,
+        targetText: "account usage hidden thread",
+      }),
+    });
+
+    try {
+      await waitForComposerEditor();
+      await vi.waitFor(
+        () => {
+          expect(document.querySelector('button[aria-label^="Codex account usage"]')).toBeNull();
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("submits pending user input after the final option selection resolves the draft answers", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,

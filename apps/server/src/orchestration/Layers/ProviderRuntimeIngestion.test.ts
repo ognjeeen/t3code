@@ -29,6 +29,7 @@ import {
   ProviderService,
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
+import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
@@ -200,6 +201,11 @@ describe("ProviderRuntimeIngestion", () => {
     const workspaceRoot = makeTempDir("t3-provider-project-");
     fs.mkdirSync(path.join(workspaceRoot, ".git"));
     const provider = createProviderServiceHarness();
+    const providerStatusPubSub = Effect.runSync(PubSub.unbounded<readonly []>());
+    const accountUsageUpdates: Array<{
+      provider: ProviderRuntimeEvent["provider"];
+      limitId: string | null | undefined;
+    }> = [];
     const orchestrationLayer = OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionSnapshotQueryLive),
       Layer.provide(OrchestrationProjectionPipelineLive),
@@ -212,6 +218,21 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provideMerge(orchestrationLayer),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
+      Layer.provideMerge(
+        Layer.succeed(ProviderRegistry, {
+          getProviders: Effect.succeed([]),
+          refresh: () => Effect.succeed([]),
+          updateAccountUsage: (providerName, accountUsage) =>
+            Effect.sync(() => {
+              accountUsageUpdates.push({
+                provider: providerName,
+                limitId: accountUsage.limitId,
+              });
+              return [];
+            }),
+          streamChanges: Stream.fromPubSub(providerStatusPubSub),
+        }),
+      ),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
       Layer.provideMerge(NodeServices.layer),
@@ -286,6 +307,7 @@ describe("ProviderRuntimeIngestion", () => {
       engine,
       emit: provider.emit,
       setProviderSession: provider.setSession,
+      accountUsageUpdates,
       drain,
     };
   }
@@ -2945,5 +2967,44 @@ describe("ProviderRuntimeIngestion", () => {
     );
     expect(thread.session?.status).toBe("error");
     expect(thread.session?.lastError).toBe("runtime still processed");
+  });
+
+  it("routes account usage updates into the provider registry without thread activity", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "account.rate-limits.updated",
+      eventId: asEventId("evt-account-rate-limits"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      payload: {
+        accountUsage: {
+          source: "codex.app-server.rate-limits",
+          updatedAt: 1_746_000_000_000,
+          limitId: "codex",
+          limitName: "Codex",
+          planType: "pro",
+          primary: {
+            usedPercent: 85,
+          },
+          secondary: null,
+          credits: null,
+          rateLimitReachedType: null,
+        },
+      },
+    });
+
+    await harness.drain();
+    const readModel = await Effect.runPromise(harness.engine.getReadModel());
+    const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-1"));
+
+    expect(harness.accountUsageUpdates).toEqual([{ provider: "codex", limitId: "codex" }]);
+    expect(
+      thread?.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-account-rate-limits",
+      ),
+    ).toBe(false);
   });
 });

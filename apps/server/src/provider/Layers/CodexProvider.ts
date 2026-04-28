@@ -17,6 +17,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 
 import type {
   CodexSettings,
+  ProviderAccountUsageSnapshot,
   ServerProvider,
   ServerProviderState,
   ModelCapabilities,
@@ -28,6 +29,7 @@ import { ServerSettingsError } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+import { normalizeCodexRateLimitsReadResponse } from "../codexAccountUsage.ts";
 import { buildServerProvider } from "../providerSnapshot.ts";
 import { CodexProvider } from "../Services/CodexProvider.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
@@ -46,6 +48,7 @@ export interface CodexAppServerProviderSnapshot {
   readonly version: string | undefined;
   readonly models: ReadonlyArray<ServerProviderModel>;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
+  readonly accountUsage?: ProviderAccountUsageSnapshot;
 }
 
 const REASONING_EFFORT_LABELS: Record<CodexSchema.V2ModelListResponse__ReasoningEffort, string> = {
@@ -289,21 +292,27 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     } satisfies CodexAppServerProviderSnapshot;
   }
 
-  const [skillsResponse, models] = yield* Effect.all(
+  const [skillsResponse, models, accountUsageResult] = yield* Effect.all(
     [
       client.request("skills/list", {
         cwds: [input.cwd],
       }),
       requestAllCodexModels(client),
+      client.request("account/rateLimits/read", undefined).pipe(Effect.result),
     ],
     { concurrency: "unbounded" },
   );
+
+  const accountUsage = Result.isSuccess(accountUsageResult)
+    ? normalizeCodexRateLimitsReadResponse(accountUsageResult.success, Date.now())
+    : undefined;
 
   return {
     account: accountResponse,
     version,
     models: appendCustomCodexModels(models, input.customModels ?? []),
     skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
+    ...(accountUsage ? { accountUsage } : {}),
   } satisfies CodexAppServerProviderSnapshot;
 }, Effect.scoped);
 
@@ -482,6 +491,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     checkedAt,
     models: snapshot.models,
     skills: snapshot.skills,
+    ...(snapshot.accountUsage ? { accountUsage: snapshot.accountUsage } : {}),
     probe: {
       installed: true,
       version: snapshot.version ?? null,

@@ -164,4 +164,42 @@ describe("ProviderRuntimeEvent", () => {
     expect(parsed.payload.usage.maxTokens).toBe(200000);
     expect(parsed.payload.usage.usedTokens).toBe(31251);
   });
+
+  it("decodes typed account.rate-limits.updated events", () => {
+    const parsed = decodeRuntimeEvent({
+      type: "account.rate-limits.updated",
+      eventId: "event-account-rate-limits-1",
+      provider: "codex",
+      createdAt: "2026-02-28T00:00:05.000Z",
+      threadId: "thread-1",
+      payload: {
+        accountUsage: {
+          source: "codex.app-server.rate-limits",
+          updatedAt: 1_746_000_000_000,
+          limitId: "codex",
+          limitName: "Codex",
+          planType: "pro",
+          primary: {
+            usedPercent: 91,
+            resetsAt: 1_746_000_360_000,
+            windowDurationMins: 60,
+          },
+          secondary: null,
+          credits: {
+            hasCredits: true,
+            unlimited: false,
+            balance: "$10.00",
+          },
+          rateLimitReachedType: null,
+        },
+      },
+    });
+
+    expect(parsed.type).toBe("account.rate-limits.updated");
+    if (parsed.type !== "account.rate-limits.updated") {
+      throw new Error("expected account.rate-limits.updated");
+    }
+    expect(parsed.payload.accountUsage.limitId).toBe("codex");
+    expect(parsed.payload.accountUsage.primary?.usedPercent).toBe(91);
+  });
 });

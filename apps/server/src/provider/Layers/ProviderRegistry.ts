@@ -4,6 +4,7 @@
  * @module ProviderRegistryLive
  */
 import type { ProviderKind, ServerProvider } from "@t3tools/contracts";
+import type { ProviderAccountUsageSnapshot } from "@t3tools/contracts";
 import { Effect, Equal, FileSystem, Layer, Path, PubSub, Ref, Stream } from "effect";
 
 import { ServerConfig } from "../../config.ts";
@@ -202,6 +203,26 @@ const ProviderRegistryLiveBase = Layer.effect(
       return yield* upsertProviders([provider], options);
     });
 
+    const updateAccountUsage = Effect.fn("updateAccountUsage")(function* (
+      provider: ProviderKind,
+      accountUsage: ProviderAccountUsageSnapshot,
+    ) {
+      const existingProvider = yield* Ref.get(providersRef).pipe(
+        Effect.map((providers) => providers.find((entry) => entry.provider === provider)),
+      );
+      if (!existingProvider) {
+        return yield* Ref.get(providersRef);
+      }
+
+      return yield* syncProvider(
+        {
+          ...existingProvider,
+          accountUsage,
+        },
+        { publish: true },
+      );
+    });
+
     const refresh = Effect.fn("refresh")(function* (provider?: ProviderKind) {
       if (provider) {
         const providerSource = providerSources.find((candidate) => candidate.provider === provider);
@@ -242,6 +263,11 @@ const ProviderRegistryLiveBase = Layer.effect(
       getProviders: Ref.get(providersRef),
       refresh: (provider?: ProviderKind) =>
         refresh(provider).pipe(
+          Effect.tapError(Effect.logError),
+          Effect.orElseSucceed(() => [] as ReadonlyArray<ServerProvider>),
+        ),
+      updateAccountUsage: (provider, accountUsage) =>
+        updateAccountUsage(provider, accountUsage).pipe(
           Effect.tapError(Effect.logError),
           Effect.orElseSucceed(() => [] as ReadonlyArray<ServerProvider>),
         ),

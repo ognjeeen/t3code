@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { ServerAuthDescriptor } from "./auth.ts";
+import { ProviderAccountUsageSnapshot } from "./accountUsage.ts";
 import {
   IsoDateTime,
   NonNegativeInt,
@@ -100,6 +101,7 @@ export const ServerProvider = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  accountUsage: Schema.optional(ProviderAccountUsageSnapshot),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 

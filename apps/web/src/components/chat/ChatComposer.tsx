@@ -76,6 +76,7 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
+import { AccountUsageMeter } from "./AccountUsageMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../vscode-icons";
 import { cn, randomUUID } from "~/lib/utils";
@@ -271,6 +272,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
+  activeAccountUsage: ServerProvider["accountUsage"];
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
   isPreparingWorktree: boolean;
   pendingAction: {
@@ -292,6 +294,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
+      {props.activeAccountUsage ? (
+        <AccountUsageMeter accountUsage={props.activeAccountUsage} />
+      ) : null}
       {props.activeContextWindow ? <ContextWindowMeter usage={props.activeContextWindow} /> : null}
       {props.isPreparingWorktree ? (
         <span className="text-muted-foreground/70 text-xs">Preparing worktree...</span>
@@ -645,6 +650,13 @@ export const ChatComposer = memo(
     const activeContextWindow = useMemo(
       () => deriveLatestContextWindowSnapshot(activeThreadActivities ?? []),
       [activeThreadActivities],
+    );
+    const activeAccountUsage = useMemo(
+      () =>
+        selectedProvider === "codex"
+          ? (selectedProviderStatus?.accountUsage ?? undefined)
+          : undefined,
+      [selectedProvider, selectedProviderStatus],
     );
 
     // ------------------------------------------------------------------
@@ -1960,6 +1972,7 @@ export const ChatComposer = memo(
                 >
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
+                    activeAccountUsage={activeAccountUsage}
                     activeContextWindow={activeContextWindow}
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}
