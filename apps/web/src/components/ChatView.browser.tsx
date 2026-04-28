@@ -5367,6 +5367,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
           document.querySelector<HTMLButtonElement>('button[aria-label^="Codex account usage"]'),
         "Unable to find account usage meter button.",
       );
+      expect(meterButton.textContent).toContain("18%");
       meterButton.click();
 
       await vi.waitFor(

@@ -18,6 +18,10 @@ describe("accountUsage", () => {
     expect(formatUsagePercent(82)).toBe("82%");
     expect(formatUsagePercent(9)).toBe("9%");
     expect(getRemainingPercent(82)).toBe(18);
+    expect(getRemainingPercent(0)).toBe(100);
+    expect(getRemainingPercent(100)).toBe(0);
+    expect(getRemainingPercent(125)).toBe(0);
+    expect(getRemainingPercent(-10)).toBe(100);
   });
 
   it("formats reset times", () => {
