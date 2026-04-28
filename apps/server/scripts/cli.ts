@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+import * as FS from "node:fs";
+import * as OS from "node:os";
+import * as NodePath from "node:path";
+
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Data, Effect, FileSystem, Logger, Option, Path } from "effect";
@@ -38,6 +42,27 @@ class CliError extends Data.TaggedError("CliError")<{
 const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("../../..", import.meta.url))),
 );
+
+function resolveBunExecutable(): string {
+  const executableName = process.platform === "win32" ? "bun.exe" : "bun";
+  const configuredInstallRoot = process.env.BUN_INSTALL?.trim();
+
+  if (configuredInstallRoot) {
+    const configuredExecutable = NodePath.join(configuredInstallRoot, "bin", executableName);
+    if (FS.existsSync(configuredExecutable)) {
+      return configuredExecutable;
+    }
+  }
+
+  if (process.platform === "win32") {
+    const defaultExecutable = NodePath.join(OS.homedir(), ".bun", "bin", executableName);
+    if (FS.existsSync(defaultExecutable)) {
+      return defaultExecutable;
+    }
+  }
+
+  return "bun";
+}
 
 const runCommand = Effect.fn("runCommand")(function* (command: ChildProcess.Command) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -144,15 +169,15 @@ const buildCmd = Command.make(
       const fs = yield* FileSystem.FileSystem;
       const repoRoot = yield* RepoRoot;
       const serverDir = path.join(repoRoot, "apps/server");
+      const bunExecutable = resolveBunExecutable();
 
       yield* Effect.log("[cli] Running tsdown...");
       yield* runCommand(
-        ChildProcess.make(process.execPath, ["--run", "build:bundle"], {
+        ChildProcess.make(bunExecutable, ["run", "build:bundle"], {
           cwd: serverDir,
           stdout: config.verbose ? "inherit" : "ignore",
           stderr: "inherit",
-          // Windows needs shell mode to resolve `.cmd` shims on PATH.
-          shell: process.platform === "win32",
+          shell: false,
         }),
       );
 

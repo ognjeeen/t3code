@@ -44,6 +44,7 @@ import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.
 import { makeCodexAdapterLive } from "../src/provider/Layers/CodexAdapter.ts";
 import { CodexAdapter } from "../src/provider/Services/CodexAdapter.ts";
 import { ProviderService } from "../src/provider/Services/ProviderService.ts";
+import { ProviderRegistry } from "../src/provider/Services/ProviderRegistry.ts";
 import { AnalyticsService } from "../src/telemetry/Services/AnalyticsService.ts";
 import { CheckpointReactorLive } from "../src/orchestration/Layers/CheckpointReactor.ts";
 import { RepositoryIdentityResolverLive } from "../src/project/Layers/RepositoryIdentityResolver.ts";
@@ -365,6 +366,14 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provide(persistenceLayer),
       Layer.provideMerge(RepositoryIdentityResolverLive),
       Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        Layer.succeed(ProviderRegistry, {
+          getProviders: Effect.succeed([]),
+          refresh: () => Effect.succeed([]),
+          updateAccountUsage: () => Effect.succeed([]),
+          streamChanges: Stream.empty,
+        }),
+      ),
       Layer.provideMerge(ServerConfig.layerTest(workspaceDir, rootDir)),
       Layer.provideMerge(NodeServices.layer),
     );

@@ -39,6 +39,7 @@ import {
   ProviderAdapterValidationError,
   type ProviderAdapterError,
 } from "../Errors.ts";
+import { normalizeCodexRateLimitsNotification } from "../codexAccountUsage.ts";
 import { CodexAdapter, type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -1099,7 +1100,11 @@ function mapToRuntimeEvents(
   }
 
   if (event.method === "account/rateLimits/updated") {
-    if (!readPayload(EffectCodexSchema.V2AccountRateLimitsUpdatedNotification, event.payload)) {
+    const payload = readPayload(
+      EffectCodexSchema.V2AccountRateLimitsUpdatedNotification,
+      event.payload,
+    );
+    if (!payload) {
       return [];
     }
     return [
@@ -1107,7 +1112,10 @@ function mapToRuntimeEvents(
         type: "account.rate-limits.updated",
         ...runtimeEventBase(event, canonicalThreadId),
         payload: {
-          rateLimits: event.payload ?? {},
+          accountUsage: normalizeCodexRateLimitsNotification(
+            payload,
+            Date.parse(event.createdAt) || Date.now(),
+          ),
         },
       },
     ];

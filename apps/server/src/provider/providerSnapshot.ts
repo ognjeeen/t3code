@@ -1,5 +1,6 @@
 import type {
   ModelCapabilities,
+  ProviderAccountUsageSnapshot,
   ServerProvider,
   ServerProviderAuth,
   ServerProviderSkill,
@@ -186,6 +187,7 @@ export function buildServerProvider(input: {
   models: ReadonlyArray<ServerProviderModel>;
   slashCommands?: ReadonlyArray<ServerProviderSlashCommand>;
   skills?: ReadonlyArray<ServerProviderSkill>;
+  accountUsage?: ProviderAccountUsageSnapshot;
   probe: ProviderProbeResult;
 }): ServerProvider {
   return {
@@ -205,6 +207,7 @@ export function buildServerProvider(input: {
     models: input.models,
     slashCommands: [...(input.slashCommands ?? [])],
     skills: [...(input.skills ?? [])],
+    ...(input.accountUsage ? { accountUsage: input.accountUsage } : {}),
   };
 }
 

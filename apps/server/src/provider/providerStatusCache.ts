@@ -28,6 +28,11 @@ const mergeProviderModels = (
   return [...fallbackModels, ...cachedModels.filter((model) => !fallbackSlugs.has(model.slug))];
 };
 
+function stripDynamicProviderFields(provider: ServerProvider): ServerProvider {
+  const { accountUsage: _accountUsage, ...stableProvider } = provider;
+  return stableProvider;
+}
+
 export const orderProviderSnapshots = (
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ServerProvider> =>
@@ -101,5 +106,5 @@ export const writeProviderStatusCache = (input: {
 }) =>
   writeFileStringAtomically({
     filePath: input.filePath,
-    contents: `${JSON.stringify(input.provider, null, 2)}\n`,
+    contents: `${JSON.stringify(stripDynamicProviderFields(input.provider), null, 2)}\n`,
   });

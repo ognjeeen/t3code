@@ -7,6 +7,7 @@
  * @module ProviderRegistry
  */
 import type { ProviderKind, ServerProvider } from "@t3tools/contracts";
+import type { ProviderAccountUsageSnapshot } from "@t3tools/contracts";
 import { Context } from "effect";
 import type { Effect, Stream } from "effect";
 
@@ -20,6 +21,14 @@ export interface ProviderRegistryShape {
    * Refresh all providers, or a single provider when specified.
    */
   readonly refresh: (provider?: ProviderKind) => Effect.Effect<ReadonlyArray<ServerProvider>>;
+
+  /**
+   * Merge dynamic account usage into the current provider snapshot.
+   */
+  readonly updateAccountUsage: (
+    provider: ProviderKind,
+    accountUsage: ProviderAccountUsageSnapshot,
+  ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
   /**
    * Stream of provider snapshot updates.
