@@ -64,11 +64,13 @@ export function AccountUsageMeter(props: { accountUsage: ProviderAccountUsageSna
                   : "text-muted-foreground",
             )}
             aria-label={
-              usedPercent ? `Codex account usage ${usedPercent} used` : "Codex account usage"
+              remainingPercent
+                ? `Codex account usage ${remainingPercent} remaining`
+                : "Codex account usage"
             }
           >
             <GaugeIcon className="size-3.5" />
-            <span className="font-medium">{usedPercent ?? "Usage"}</span>
+            <span className="font-medium">{remainingPercent ?? "Usage"}</span>
           </button>
         }
       />
@@ -99,8 +101,8 @@ export function AccountUsageMeter(props: { accountUsage: ProviderAccountUsageSna
             <div className="text-xs font-medium text-foreground">
               {getAccountUsageWindowLabel("primary", accountUsage.primary?.windowDurationMins)}
             </div>
-            {detailRow("Used", usedPercent)}
             {detailRow("Remaining", remainingPercent)}
+            {detailRow("Used", usedPercent)}
             {detailRow("Reset at", primaryResetAt)}
             {detailRow("Resets in", primaryResetsIn)}
             {detailRow("Window", formatWindowDuration(accountUsage.primary?.windowDurationMins))}
@@ -111,8 +113,8 @@ export function AccountUsageMeter(props: { accountUsage: ProviderAccountUsageSna
               <div className="text-xs font-medium text-foreground">
                 {getAccountUsageWindowLabel("secondary", accountUsage.secondary.windowDurationMins)}
               </div>
-              {detailRow("Used", secondaryUsedPercent)}
               {detailRow("Remaining", secondaryRemainingPercent)}
+              {detailRow("Used", secondaryUsedPercent)}
               {detailRow("Reset at", secondaryResetAt)}
               {detailRow("Resets in", secondaryResetsIn)}
               {detailRow("Window", formatWindowDuration(accountUsage.secondary.windowDurationMins))}
