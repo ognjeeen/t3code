@@ -5732,7 +5732,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       }),
       configureFixture: (nextFixture) => {
         const provider = nextFixture.serverConfig.providers[0];
-        if (!provider || provider.provider !== "codex") {
+        if (!provider || provider.driver !== "codex") {
           throw new Error("Expected default codex provider in test fixture.");
         }
         nextFixture.serverConfig = {
