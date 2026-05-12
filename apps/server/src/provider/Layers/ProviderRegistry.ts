@@ -710,7 +710,10 @@ export const ProviderRegistryLive = Layer.effect(
         refreshInstance(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
       getProviderMaintenanceCapabilitiesForInstance,
       setProviderMaintenanceActionState,
-      updateAccountUsage: (provider: ProviderDriverKind, accountUsage: ProviderAccountUsageSnapshot) =>
+      updateAccountUsage: (
+        provider: ProviderDriverKind,
+        accountUsage: ProviderAccountUsageSnapshot,
+      ) =>
         updateAccountUsage(provider, accountUsage).pipe(Effect.catchCause(recoverRefreshFailure)),
       get streamChanges() {
         return Stream.fromPubSub(changesPubSub);
