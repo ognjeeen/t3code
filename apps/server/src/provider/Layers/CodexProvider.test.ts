@@ -1,18 +1,27 @@
 import assert from "node:assert/strict";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { CodexSettings } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { checkCodexProviderStatus } from "./CodexProvider.ts";
 
 const testLayer = Layer.mergeAll(ServerSettingsService.layerTest(), NodeServices.layer);
+const codexSettings: CodexSettings = {
+  enabled: true,
+  binaryPath: "codex",
+  homePath: "",
+  shadowHomePath: "",
+  customModels: [],
+};
 
 describe("CodexProvider account usage", () => {
   it.effect("attaches account usage when account/rateLimits/read succeeds", () =>
     Effect.gen(function* () {
-      const status = yield* checkCodexProviderStatus(() =>
+      const status = yield* checkCodexProviderStatus(codexSettings, () =>
         Effect.succeed({
           version: "1.0.0",
           account: {
@@ -54,7 +63,7 @@ describe("CodexProvider account usage", () => {
 
   it.effect("does not fail provider probe when account usage is unavailable", () =>
     Effect.gen(function* () {
-      const status = yield* checkCodexProviderStatus(() =>
+      const status = yield* checkCodexProviderStatus(codexSettings, () =>
         Effect.succeed({
           version: "1.0.0",
           account: {
@@ -77,7 +86,7 @@ describe("CodexProvider account usage", () => {
 
   it.effect("still surfaces actual probe failures", () =>
     Effect.gen(function* () {
-      const result = yield* checkCodexProviderStatus(() =>
+      const result = yield* checkCodexProviderStatus(codexSettings, () =>
         Effect.fail(
           new CodexErrors.CodexAppServerSpawnError({
             command: "codex app-server",

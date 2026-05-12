@@ -1037,7 +1037,7 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       yield* runtime.emit({
         id: asEventId("evt-account-rate-limits-updated"),
         kind: "notification",
-        provider: "codex",
+        provider: ProviderDriverKind.make("codex"),
         threadId: asThreadId("thread-1"),
         createdAt: "2026-04-28T12:00:00.000Z",
         method: "account/rateLimits/updated",

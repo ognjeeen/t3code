@@ -1129,7 +1129,7 @@ function mapToRuntimeEvents(
         payload: {
           accountUsage: normalizeCodexRateLimitsNotification(
             payload,
-            Date.parse(event.createdAt) || Date.now(),
+            Date.parse(event.createdAt) || 0,
           ),
         },
       },

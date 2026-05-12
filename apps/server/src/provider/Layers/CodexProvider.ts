@@ -316,7 +316,10 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   );
 
   const accountUsage = Result.isSuccess(accountUsageResult)
-    ? normalizeCodexRateLimitsReadResponse(accountUsageResult.success, Date.now())
+    ? normalizeCodexRateLimitsReadResponse(
+        accountUsageResult.success,
+        DateTime.toEpochMillis(yield* DateTime.now),
+      )
     : undefined;
 
   return {

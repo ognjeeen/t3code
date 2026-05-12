@@ -376,6 +376,9 @@ export const makeOrchestrationIntegrationHarness = (
         Layer.succeed(ProviderRegistry, {
           getProviders: Effect.succeed([]),
           refresh: () => Effect.succeed([]),
+          refreshInstance: () => Effect.succeed([]),
+          getProviderMaintenanceCapabilitiesForInstance: () => Effect.die("unused"),
+          setProviderMaintenanceActionState: () => Effect.succeed([]),
           updateAccountUsage: () => Effect.succeed([]),
           streamChanges: Stream.empty,
         }),

@@ -248,6 +248,9 @@ describe("ProviderRuntimeIngestion", () => {
         Layer.succeed(ProviderRegistry, {
           getProviders: Effect.succeed([]),
           refresh: () => Effect.succeed([]),
+          refreshInstance: () => Effect.succeed([]),
+          getProviderMaintenanceCapabilitiesForInstance: () => Effect.die("unused"),
+          setProviderMaintenanceActionState: () => Effect.succeed([]),
           updateAccountUsage: (providerName, accountUsage) =>
             Effect.sync(() => {
               accountUsageUpdates.push({
@@ -2999,12 +3002,12 @@ describe("ProviderRuntimeIngestion", () => {
 
   it("routes account usage updates into the provider registry without thread activity", async () => {
     const harness = await createHarness();
-    const now = new Date().toISOString();
+    const now = "2026-01-01T00:00:00.000Z";
 
     harness.emit({
       type: "account.rate-limits.updated",
       eventId: asEventId("evt-account-rate-limits"),
-      provider: "codex",
+      provider: ProviderDriverKind.make("codex"),
       createdAt: now,
       threadId: asThreadId("thread-1"),
       payload: {
@@ -3025,10 +3028,12 @@ describe("ProviderRuntimeIngestion", () => {
     });
 
     await harness.drain();
-    const readModel = await Effect.runPromise(harness.engine.getReadModel());
+    const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-1"));
 
-    expect(harness.accountUsageUpdates).toEqual([{ provider: "codex", limitId: "codex" }]);
+    expect(harness.accountUsageUpdates).toEqual([
+      { provider: ProviderDriverKind.make("codex"), limitId: "codex" },
+    ]);
     expect(
       thread?.activities.some(
         (activity: ProviderRuntimeTestActivity) => activity.id === "evt-account-rate-limits",
