@@ -130,12 +130,17 @@ import {
   type DraftId,
 } from "../composerDraftStore";
 import {
+  appendSelectedAssistantContextsToPrompt,
+  type SelectedAssistantContextDraft,
+} from "./chat/assistantSelectionContext";
+import {
   appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../lib/terminalContext";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
+import { AssistantSelectionContextToolbar } from "./chat/AssistantSelectionContextToolbar";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -638,6 +643,12 @@ export default function ChatView(props: ChatViewProps) {
   const setComposerDraftTerminalContexts = useComposerDraftStore(
     (store) => store.setTerminalContexts,
   );
+  const clearComposerDraftSelectedAssistantContexts = useComposerDraftStore(
+    (store) => store.clearSelectedAssistantContexts,
+  );
+  const addComposerDraftSelectedAssistantContext = useComposerDraftStore(
+    (store) => store.addSelectedAssistantContext,
+  );
   const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setComposerDraftInteractionMode = useComposerDraftStore(
@@ -662,8 +673,10 @@ export default function ChatView(props: ChatViewProps) {
   const promptRef = useRef("");
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
+  const composerSelectedAssistantContextsRef = useRef<SelectedAssistantContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const messagesAreaRef = useRef<HTMLDivElement>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
@@ -2390,6 +2403,7 @@ export default function ChatView(props: ChatViewProps) {
     const {
       images: composerImages,
       terminalContexts: composerTerminalContexts,
+      selectedAssistantContexts: composerSelectedAssistantContexts,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
@@ -2400,12 +2414,14 @@ export default function ChatView(props: ChatViewProps) {
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
+      selectedAssistantContexts: sendableSelectedAssistantContexts,
       expiredTerminalContextCount,
       hasSendableContent,
     } = deriveComposerSendState({
       prompt: promptForSend,
       imageCount: composerImages.length,
       terminalContexts: composerTerminalContexts,
+      selectedAssistantContexts: composerSelectedAssistantContexts,
     });
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
@@ -2470,8 +2486,13 @@ export default function ChatView(props: ChatViewProps) {
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
-    const messageTextForSend = appendTerminalContextsToPrompt(
+    const composerSelectedAssistantContextsSnapshot = [...sendableSelectedAssistantContexts];
+    const promptWithSelectedContexts = appendSelectedAssistantContextsToPrompt(
       promptForSend,
+      composerSelectedAssistantContextsSnapshot,
+    );
+    const messageTextForSend = appendTerminalContextsToPrompt(
+      promptWithSelectedContexts,
       composerTerminalContextsSnapshot,
     );
     const messageIdForSend = newMessageId();
@@ -2640,7 +2661,8 @@ export default function ChatView(props: ChatViewProps) {
         !turnStartSucceeded &&
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
-        composerTerminalContextsRef.current.length === 0
+        composerTerminalContextsRef.current.length === 0 &&
+        composerSelectedAssistantContextsRef.current.length === 0
       ) {
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
@@ -2654,9 +2676,14 @@ export default function ChatView(props: ChatViewProps) {
         const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
         composerImagesRef.current = retryComposerImages;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
+        composerSelectedAssistantContextsRef.current = composerSelectedAssistantContextsSnapshot;
         setComposerDraftPrompt(composerDraftTarget, promptForSend);
         addComposerDraftImages(composerDraftTarget, retryComposerImages);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
+        clearComposerDraftSelectedAssistantContexts(composerDraftTarget);
+        for (const context of composerSelectedAssistantContextsSnapshot) {
+          addComposerDraftSelectedAssistantContext(composerDraftTarget, context);
+        }
         composerRef.current?.resetCursorState({
           cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
           prompt: promptForSend,
@@ -3287,7 +3314,7 @@ export default function ChatView(props: ChatViewProps) {
         {/* Chat column */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/* Messages Wrapper */}
-          <div className="relative flex min-h-0 flex-1 flex-col">
+          <div ref={messagesAreaRef} className="relative flex min-h-0 flex-1 flex-col">
             {/* Messages — LegendList handles virtualization and scrolling internally */}
             <MessagesTimeline
               key={activeThread.id}
@@ -3312,6 +3339,12 @@ export default function ChatView(props: ChatViewProps) {
               timestampFormat={timestampFormat}
               workspaceRoot={activeWorkspaceRoot}
               onIsAtEndChange={onIsAtEndChange}
+            />
+            <AssistantSelectionContextToolbar
+              containerRef={messagesAreaRef}
+              onInsertSelectedContext={(selectedText, messageId) => {
+                composerRef.current?.insertSelectedContext({ selectedText, messageId });
+              }}
             />
 
             {/* scroll to bottom pill — shown when user has scrolled away from the bottom */}
@@ -3377,6 +3410,7 @@ export default function ChatView(props: ChatViewProps) {
               promptRef={promptRef}
               composerImagesRef={composerImagesRef}
               composerTerminalContextsRef={composerTerminalContextsRef}
+              composerSelectedAssistantContextsRef={composerSelectedAssistantContextsRef}
               shouldAutoScrollRef={isAtEndRef}
               scheduleStickToBottom={scrollToEnd}
               onSend={onSend}

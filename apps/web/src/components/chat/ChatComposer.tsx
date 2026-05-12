@@ -1,6 +1,7 @@
 import type {
   ApprovalRequestId,
   EnvironmentId,
+  MessageId,
   ModelSelection,
   ProjectEntry,
   ProviderApprovalDecision,
@@ -65,6 +66,7 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { ComposerSelectedAssistantContexts } from "./ComposerSelectedAssistantContexts";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -78,6 +80,7 @@ import {
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { AccountUsageMeter } from "./AccountUsageMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
+import { type SelectedAssistantContextDraft } from "./assistantSelectionContext";
 import { basenameOfPath } from "../../vscode-icons";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
@@ -326,6 +329,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 export interface ChatComposerHandle {
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
+  insertSelectedContext: (input: { selectedText: string; messageId: string }) => void;
   openModelPicker: () => void;
   toggleModelPicker: () => void;
   isModelPickerOpen: () => boolean;
@@ -348,6 +352,7 @@ export interface ChatComposerHandle {
     prompt: string;
     images: ComposerImageAttachment[];
     terminalContexts: TerminalContextDraft[];
+    selectedAssistantContexts: SelectedAssistantContextDraft[];
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
@@ -430,6 +435,7 @@ export interface ChatComposerProps {
   promptRef: React.MutableRefObject<string>;
   composerImagesRef: React.MutableRefObject<ComposerImageAttachment[]>;
   composerTerminalContextsRef: React.MutableRefObject<TerminalContextDraft[]>;
+  composerSelectedAssistantContextsRef: React.MutableRefObject<SelectedAssistantContextDraft[]>;
 
   // Scroll
   shouldAutoScrollRef: React.MutableRefObject<boolean>;
@@ -517,6 +523,7 @@ export const ChatComposer = memo(
       promptRef,
       composerImagesRef,
       composerTerminalContextsRef,
+      composerSelectedAssistantContextsRef,
       shouldAutoScrollRef,
       scheduleStickToBottom,
       onSend,
@@ -545,6 +552,7 @@ export const ChatComposer = memo(
     const prompt = composerDraft.prompt;
     const composerImages = composerDraft.images;
     const composerTerminalContexts = composerDraft.terminalContexts;
+    const composerSelectedAssistantContexts = composerDraft.selectedAssistantContexts;
     const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
 
     const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -559,6 +567,12 @@ export const ChatComposer = memo(
     );
     const setComposerDraftTerminalContexts = useComposerDraftStore(
       (store) => store.setTerminalContexts,
+    );
+    const addComposerDraftSelectedAssistantContext = useComposerDraftStore(
+      (store) => store.addSelectedAssistantContext,
+    );
+    const removeComposerDraftSelectedAssistantContext = useComposerDraftStore(
+      (store) => store.removeSelectedAssistantContext,
     );
     const clearComposerDraftPersistedAttachments = useComposerDraftStore(
       (store) => store.clearPersistedAttachments,
@@ -698,8 +712,9 @@ export const ChatComposer = memo(
           prompt,
           imageCount: composerImages.length,
           terminalContexts: composerTerminalContexts,
+          selectedAssistantContexts: composerSelectedAssistantContexts,
         }),
-      [composerImages.length, composerTerminalContexts, prompt],
+      [composerImages.length, composerSelectedAssistantContexts, composerTerminalContexts, prompt],
     );
 
     // ------------------------------------------------------------------
@@ -934,6 +949,33 @@ export const ChatComposer = memo(
       [composerDraftTarget, setComposerDraftPrompt],
     );
 
+    const insertSelectedContext = useCallback(
+      (input: { selectedText: string; messageId: string }) => {
+        const inserted = addComposerDraftSelectedAssistantContext(composerDraftTarget, {
+          id: randomUUID(),
+          messageId: input.messageId as MessageId,
+          createdAt: new Date().toISOString(),
+          text: input.selectedText,
+        });
+        setComposerTrigger(null);
+        setComposerHighlightedItemId(null);
+        setComposerHighlightedSearchKey(null);
+        if (!inserted) {
+          scheduleComposerFocus();
+          return;
+        }
+        window.requestAnimationFrame(() => {
+          composerEditorRef.current?.focusAt(composerCursor);
+        });
+      },
+      [
+        addComposerDraftSelectedAssistantContext,
+        composerCursor,
+        composerDraftTarget,
+        scheduleComposerFocus,
+      ],
+    );
+
     const addComposerImage = useCallback(
       (image: ComposerImageAttachment) => {
         addComposerDraftImage(composerDraftTarget, image);
@@ -978,6 +1020,13 @@ export const ChatComposer = memo(
       ],
     );
 
+    const removeSelectedAssistantContextFromDraft = useCallback(
+      (contextId: string) => {
+        removeComposerDraftSelectedAssistantContext(composerDraftTarget, contextId);
+      },
+      [composerDraftTarget, removeComposerDraftSelectedAssistantContext],
+    );
+
     // ------------------------------------------------------------------
     // Sync refs back to parent
     // ------------------------------------------------------------------
@@ -993,6 +1042,10 @@ export const ChatComposer = memo(
     useEffect(() => {
       composerTerminalContextsRef.current = composerTerminalContexts;
     }, [composerTerminalContexts, composerTerminalContextsRef]);
+
+    useEffect(() => {
+      composerSelectedAssistantContextsRef.current = composerSelectedAssistantContexts;
+    }, [composerSelectedAssistantContexts, composerSelectedAssistantContextsRef]);
 
     // ------------------------------------------------------------------
     // Composer menu highlight sync
@@ -1605,6 +1658,7 @@ export const ChatComposer = memo(
         focusAt: (cursor: number) => {
           composerEditorRef.current?.focusAt(cursor);
         },
+        insertSelectedContext,
         openModelPicker: () => {
           setIsComposerModelPickerOpen(true);
         },
@@ -1672,6 +1726,7 @@ export const ChatComposer = memo(
           prompt: promptRef.current,
           images: composerImagesRef.current,
           terminalContexts: composerTerminalContextsRef.current,
+          selectedAssistantContexts: composerSelectedAssistantContextsRef.current,
           selectedPromptEffort,
           selectedModelOptionsForDispatch,
           selectedModelSelection,
@@ -1686,8 +1741,10 @@ export const ChatComposer = memo(
         composerCursor,
         composerTerminalContexts,
         insertComposerDraftTerminalContext,
+        insertSelectedContext,
         promptRef,
         composerImagesRef,
+        composerSelectedAssistantContextsRef,
         composerTerminalContextsRef,
         isComposerModelPickerOpen,
         readComposerSnapshot,
@@ -1844,6 +1901,14 @@ export const ChatComposer = memo(
                     ))}
                   </div>
                 )}
+
+              {!isComposerApprovalState && pendingUserInputs.length === 0 && (
+                <ComposerSelectedAssistantContexts
+                  contexts={composerSelectedAssistantContexts}
+                  onRemove={removeSelectedAssistantContextFromDraft}
+                  onContextClick={() => focusComposer()}
+                />
+              )}
 
               <ComposerPromptEditor
                 ref={composerEditorRef}

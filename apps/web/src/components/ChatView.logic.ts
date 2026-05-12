@@ -16,6 +16,10 @@ import {
   stripInlineTerminalContextPlaceholders,
   type TerminalContextDraft,
 } from "../lib/terminalContext";
+import {
+  type SelectedAssistantContextDraft,
+  normalizeSelectedAssistantContextDraft,
+} from "./chat/assistantSelectionContext";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
@@ -183,22 +187,32 @@ export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
+  selectedAssistantContexts: ReadonlyArray<SelectedAssistantContextDraft>;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
+  selectedAssistantContexts: SelectedAssistantContextDraft[];
   expiredTerminalContextCount: number;
   hasSendableContent: boolean;
 } {
   const trimmedPrompt = stripInlineTerminalContextPlaceholders(options.prompt).trim();
   const sendableTerminalContexts = filterTerminalContextsWithText(options.terminalContexts);
+  const selectedAssistantContexts = options.selectedAssistantContexts.flatMap((context) => {
+    const normalized = normalizeSelectedAssistantContextDraft(context);
+    return normalized ? [normalized] : [];
+  });
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
+    selectedAssistantContexts,
     expiredTerminalContextCount,
     hasSendableContent:
-      trimmedPrompt.length > 0 || options.imageCount > 0 || sendableTerminalContexts.length > 0,
+      trimmedPrompt.length > 0 ||
+      options.imageCount > 0 ||
+      sendableTerminalContexts.length > 0 ||
+      selectedAssistantContexts.length > 0,
   };
 }
 

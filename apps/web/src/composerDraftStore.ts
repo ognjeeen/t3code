@@ -1,6 +1,7 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   type EnvironmentId,
+  type MessageId,
   ModelSelection,
   ProjectId,
   ProviderInteractionMode,
@@ -33,6 +34,10 @@ import {
   ensureInlineTerminalContextPlaceholders,
   normalizeTerminalContextText,
 } from "./lib/terminalContext";
+import {
+  type SelectedAssistantContextDraft,
+  normalizeSelectedAssistantContextDraft,
+} from "./components/chat/assistantSelectionContext";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -41,7 +46,7 @@ import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
-const COMPOSER_DRAFT_STORAGE_VERSION = 6;
+const COMPOSER_DRAFT_STORAGE_VERSION = 7;
 const DraftThreadEnvModeSchema = Schema.Literals(["local", "worktree"]);
 const isRuntimeMode = Schema.is(RuntimeMode);
 export type DraftThreadEnvMode = typeof DraftThreadEnvModeSchema.Type;
@@ -88,10 +93,21 @@ const PersistedTerminalContextDraft = Schema.Struct({
 });
 type PersistedTerminalContextDraft = typeof PersistedTerminalContextDraft.Type;
 
+const PersistedSelectedAssistantContextDraft = Schema.Struct({
+  id: Schema.String,
+  messageId: Schema.String,
+  createdAt: Schema.String,
+  text: Schema.String,
+});
+type PersistedSelectedAssistantContextDraft = typeof PersistedSelectedAssistantContextDraft.Type;
+
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerImageAttachment),
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
+  selectedAssistantContexts: Schema.optionalKey(
+    Schema.Array(PersistedSelectedAssistantContextDraft),
+  ),
   modelSelectionByProvider: Schema.optionalKey(
     Schema.Record(ProviderKind, Schema.optionalKey(ModelSelection)),
   ),
@@ -203,6 +219,7 @@ export interface ComposerThreadDraftState {
   nonPersistedImageIds: string[];
   persistedAttachments: PersistedComposerImageAttachment[];
   terminalContexts: TerminalContextDraft[];
+  selectedAssistantContexts: SelectedAssistantContextDraft[];
   modelSelectionByProvider: Partial<Record<ProviderKind, ModelSelection>>;
   activeProvider: ProviderKind | null;
   runtimeMode: RuntimeMode | null;
@@ -331,6 +348,12 @@ interface ComposerDraftStoreState {
   setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
+  addSelectedAssistantContext: (
+    threadRef: ComposerThreadTarget,
+    context: SelectedAssistantContextDraft,
+  ) => boolean;
+  removeSelectedAssistantContext: (threadRef: ComposerThreadTarget, contextId: string) => void;
+  clearSelectedAssistantContexts: (threadRef: ComposerThreadTarget) => void;
   setModelSelection: (
     threadRef: ComposerThreadTarget,
     modelSelection: ModelSelection | null | undefined,
@@ -448,9 +471,11 @@ const EMPTY_IMAGES: ComposerImageAttachment[] = [];
 const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
+const EMPTY_SELECTED_ASSISTANT_CONTEXTS: SelectedAssistantContextDraft[] = [];
 Object.freeze(EMPTY_IMAGES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
+Object.freeze(EMPTY_SELECTED_ASSISTANT_CONTEXTS);
 const EMPTY_MODEL_SELECTION_BY_PROVIDER: Partial<Record<ProviderKind, ModelSelection>> =
   Object.freeze({});
 const EMPTY_COMPOSER_DRAFT_MODEL_STATE = Object.freeze<ComposerDraftModelState>({
@@ -464,6 +489,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   nonPersistedImageIds: EMPTY_IDS,
   persistedAttachments: EMPTY_PERSISTED_ATTACHMENTS,
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
+  selectedAssistantContexts: EMPTY_SELECTED_ASSISTANT_CONTEXTS,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
   activeProvider: null,
   runtimeMode: null,
@@ -477,6 +503,7 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     nonPersistedImageIds: [],
     persistedAttachments: [],
     terminalContexts: [],
+    selectedAssistantContexts: [],
     modelSelectionByProvider: {},
     activeProvider: null,
     runtimeMode: null,
@@ -492,6 +519,10 @@ function composerImageDedupKey(image: ComposerImageAttachment): string {
 
 function terminalContextDedupKey(context: TerminalContextDraft): string {
   return `${context.terminalId}\u0000${context.lineStart}\u0000${context.lineEnd}`;
+}
+
+function selectedAssistantContextDedupKey(context: SelectedAssistantContextDraft): string {
+  return `${context.messageId}\u0000${context.text}`;
 }
 
 function normalizeTerminalContextForThread(
@@ -547,6 +578,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.images.length === 0 &&
     draft.persistedAttachments.length === 0 &&
     draft.terminalContexts.length === 0 &&
+    draft.selectedAssistantContexts.length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
@@ -881,6 +913,33 @@ function normalizePersistedTerminalContextDraft(
     lineStart: normalizedLineStart,
     lineEnd: normalizedLineEnd,
   };
+}
+
+function normalizePersistedSelectedAssistantContextDraft(
+  value: unknown,
+): PersistedSelectedAssistantContextDraft | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const id = typeof candidate.id === "string" ? candidate.id : "";
+  const messageId = typeof candidate.messageId === "string" ? candidate.messageId : "";
+  const createdAt = typeof candidate.createdAt === "string" ? candidate.createdAt : "";
+  const text = typeof candidate.text === "string" ? candidate.text : "";
+  const normalized = normalizeSelectedAssistantContextDraft({
+    id,
+    messageId: messageId as MessageId,
+    createdAt,
+    text,
+  });
+  return normalized
+    ? {
+        id: normalized.id,
+        messageId: normalized.messageId,
+        createdAt: normalized.createdAt,
+        text: normalized.text,
+      }
+    : null;
 }
 
 function normalizeDraftThreadEnvMode(
@@ -1352,6 +1411,12 @@ function normalizePersistedDraftsByThreadId(
           return normalized ? [normalized] : [];
         })
       : [];
+    const selectedAssistantContexts = Array.isArray(draftCandidate.selectedAssistantContexts)
+      ? draftCandidate.selectedAssistantContexts.flatMap((entry) => {
+          const normalized = normalizePersistedSelectedAssistantContextDraft(entry);
+          return normalized ? [normalized] : [];
+        })
+      : [];
     const runtimeMode = isRuntimeMode(draftCandidate.runtimeMode)
       ? draftCandidate.runtimeMode
       : null;
@@ -1415,6 +1480,7 @@ function normalizePersistedDraftsByThreadId(
       promptCandidate.length === 0 &&
       attachments.length === 0 &&
       terminalContexts.length === 0 &&
+      selectedAssistantContexts.length === 0 &&
       !hasModelData &&
       !runtimeMode &&
       !interactionMode
@@ -1437,6 +1503,7 @@ function normalizePersistedDraftsByThreadId(
       prompt,
       attachments,
       ...(terminalContexts.length > 0 ? { terminalContexts } : {}),
+      ...(selectedAssistantContexts.length > 0 ? { selectedAssistantContexts } : {}),
       ...(hasModelData
         ? {
             modelSelectionByProvider: cloneModelSelectionByProvider(modelSelectionByProvider),
@@ -1519,6 +1586,7 @@ function partializeComposerDraftStoreState(
       draft.prompt.length === 0 &&
       draft.persistedAttachments.length === 0 &&
       draft.terminalContexts.length === 0 &&
+      draft.selectedAssistantContexts.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
       draft.interactionMode === null
@@ -1538,6 +1606,16 @@ function partializeComposerDraftStoreState(
               terminalLabel: context.terminalLabel,
               lineStart: context.lineStart,
               lineEnd: context.lineEnd,
+            })),
+          }
+        : {}),
+      ...(draft.selectedAssistantContexts.length > 0
+        ? {
+            selectedAssistantContexts: draft.selectedAssistantContexts.map((context) => ({
+              id: context.id,
+              messageId: context.messageId,
+              createdAt: context.createdAt,
+              text: context.text,
             })),
           }
         : {}),
@@ -1768,6 +1846,14 @@ function toHydratedThreadDraft(
         ...context,
         text: "",
       })) ?? [],
+    selectedAssistantContexts:
+      persistedDraft.selectedAssistantContexts?.flatMap((context) => {
+        const normalized = normalizeSelectedAssistantContextDraft({
+          ...context,
+          messageId: context.messageId as MessageId,
+        });
+        return normalized ? [normalized] : [];
+      }) ?? [],
     modelSelectionByProvider,
     activeProvider,
     runtimeMode: persistedDraft.runtimeMode ?? null,
@@ -2211,6 +2297,93 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 normalizedContexts.length,
               ),
               terminalContexts: normalizedContexts,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        addSelectedAssistantContext: (threadRef, context) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return false;
+          }
+          let inserted = false;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const normalizedContext = normalizeSelectedAssistantContextDraft(context);
+            if (!normalizedContext) {
+              return state;
+            }
+            const dedupKey = selectedAssistantContextDedupKey(normalizedContext);
+            if (
+              existing.selectedAssistantContexts.some(
+                (entry) => entry.id === normalizedContext.id,
+              ) ||
+              existing.selectedAssistantContexts.some(
+                (entry) => selectedAssistantContextDedupKey(entry) === dedupKey,
+              )
+            ) {
+              return state;
+            }
+            inserted = true;
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: {
+                  ...existing,
+                  selectedAssistantContexts: [
+                    ...existing.selectedAssistantContexts,
+                    normalizedContext,
+                  ],
+                },
+              },
+            };
+          });
+          return inserted;
+        },
+        removeSelectedAssistantContext: (threadRef, contextId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0 || contextId.length === 0) {
+            return;
+          }
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...current,
+              selectedAssistantContexts: current.selectedAssistantContexts.filter(
+                (context) => context.id !== contextId,
+              ),
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        clearSelectedAssistantContexts: (threadRef) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current || current.selectedAssistantContexts.length === 0) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...current,
+              selectedAssistantContexts: [],
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
@@ -2741,6 +2914,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nonPersistedImageIds: [],
               persistedAttachments: [],
               terminalContexts: [],
+              selectedAssistantContexts: [],
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
