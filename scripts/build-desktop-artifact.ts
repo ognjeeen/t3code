@@ -776,7 +776,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(stageResourcesDir, path.join(stageAppDir, "apps/desktop/prod-resources"));
 
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: "t3m0",
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
